@@ -1586,8 +1586,59 @@ int ssl_sock_bind_verifycbk(int ok, X509_STORE_CTX *x_store)
 	struct ssl_sock_ctx *ctx;
 	int err, depth;
 
-	ssl = X509_STORE_CTX_get_ex_data(x_store, SSL_get_ex_data_X509_STORE_CTX_idx());
+	BIO 	*certbio = NULL;
+	BIO 	*outbio = NULL;
+	X509 	*cert = NULL;
+	const 	EVP_MD *fprint_type = NULL;
+    unsigned int fprint_size;
+    unsigned char fprint[EVP_MAX_MD_SIZE];
+    char fingerprint_buffer[512];
+	char *b = fingerprint_buffer;
+    char 	*subj = NULL;
+    BIGNUM *crt_serialBN = NULL;
+    char *crt_serialHex;
+
+    ssl = X509_STORE_CTX_get_ex_data(x_store, SSL_get_ex_data_X509_STORE_CTX_idx());
 	conn = SSL_get_ex_data(ssl, ssl_app_data_index);
+
+    /* Initialize OPENSSL for correct work. */
+    OpenSSL_add_all_algorithms();
+    ERR_load_BIO_strings();
+    ERR_load_crypto_strings();
+
+    /* Create the Input/Output BIO's */
+    certbio = BIO_new(BIO_s_file());
+    outbio  = BIO_new_fp(stdout, BIO_NOCLOSE);
+
+    /* Collect certificate details */
+    cert = X509_STORE_CTX_get_current_cert(x_store);
+    subj = X509_NAME_oneline(X509_get_subject_name(cert), NULL, 0);
+    //iss = X509_NAME_oneline(X509_get_issuer_Name(cert));
+
+	/* Set the digest method and calculate the cert fingerprint */
+  	fprint_type = EVP_sha1();
+
+  	X509_digest(cert, fprint_type, fprint, &fprint_size);
+
+
+	/* Prepare the certificate information and store into conn struct */
+	b = fingerprint_buffer + sprintf(fingerprint_buffer, "%02x", fprint[0]);
+	for (unsigned i = 1; i<fprint_size; i++)
+	{
+		b += sprintf(b, ":%02x", fprint[i]);
+	}
+	strcpy(conn->certf, fingerprint_buffer);
+
+    crt_serialBN = ASN1_INTEGER_to_BN(X509_get_serialNumber(cert), NULL);
+    crt_serialHex = BN_bn2hex(crt_serialBN);
+    strcpy(conn->serial, crt_serialHex);
+
+    strcpy(conn->subject, subj);
+
+    free(subj);
+    X509_free(cert);
+    BIO_free_all(certbio);
+    BIO_free_all(outbio);
 
 	ctx = conn->xprt_ctx;
 
