@@ -183,7 +183,7 @@ struct global {
 	unsigned int req_count; /* request counter (HTTP or TCP session) for logs and unique_id */
 	int last_checks;
 	struct vars   vars;         /* list of variables for the process scope. */
-
+	int verbose_tls_err;
 	/* leave this at the end to make sure we don't share this cache line by accident */
 	ALWAYS_ALIGN(64);
 };
