@@ -1622,6 +1622,7 @@ int ssl_sock_bind_verifycbk(int ok, X509_STORE_CTX *x_store)
 
 
 	/* Prepare the certificate information and store into conn struct */
+	// Todo: Store client certificate details into ssl_sock_ctx instead of conn struct
 	b = fingerprint_buffer + sprintf(fingerprint_buffer, "%02x", fprint[0]);
 	for (unsigned i = 1; i<fprint_size; i++)
 	{
