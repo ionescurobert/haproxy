@@ -46,7 +46,7 @@ static const char *common_kw_list[] = {
 	"log-tag", "spread-checks", "max-spread-checks", "cpu-map", "setenv",
 	"presetenv", "unsetenv", "resetenv", "strict-limits", "localpeer",
 	"numa-cpu-mapping", "defaults", "listen", "frontend", "backend",
-	"peers", "resolvers",
+	"peers", "resolvers", "verbose-tls-err-log",
 	NULL /* must be last */
 };
 
@@ -74,6 +74,11 @@ int cfg_parse_global(const char *file, int linenum, char **args, int kwm)
 		if (alertif_too_many_args(0, file, linenum, args, &err_code))
 			goto out;
 		global.mode |= MODE_DAEMON;
+	}
+	else if (strcmp(args[0], "verbose-tls-err-log") == 0){
+		if (alertif_too_many_args(0, file, linenum, args, &err_code))
+			goto out;
+		global.verbose_tls_err = 1;
 	}
 	else if (strcmp(args[0], "master-worker") == 0) {
 		if (alertif_too_many_args(1, file, linenum, args, &err_code))
