@@ -359,8 +359,22 @@ static void session_kill_embryonic(struct session *sess, unsigned int state)
 		session_prepare_log_prefix(sess);
 		err_msg = conn_err_code_str(conn);
 		if (err_msg)
-			send_log(sess->fe, level, "%s: %s\n", trash.area,
-				 err_msg);
+		{
+			if (conn->err_code == CO_ER_SSL_CRT_FAIL || conn->err_code == CO_ER_SSL_CA_FAIL)
+			{
+				if (global.verbose_tls_err == 1)
+				{
+
+					send_log(sess->fe, level, "%s: %s (sha-1 fingerprint:%s | %s | serial:%s)\n",
+						trash.area, err_msg, conn->certf, conn->subject, conn->serial);					
+				}
+				else
+					send_log(sess->fe, level, "%s: %s\n", trash.area, err_msg);
+			}
+			else
+				send_log(sess->fe, level, "%s: %s\n", trash.area, err_msg);
+			
+		}
 		else
 			send_log(sess->fe, level, "%s: unknown connection error (code=%d flags=%08x)\n",
 				 trash.area, conn->err_code, conn->flags);
