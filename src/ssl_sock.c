@@ -1595,11 +1595,14 @@ int ssl_sock_bind_verifycbk(int ok, X509_STORE_CTX *x_store)
     char fingerprint_buffer[512];
 	char *b = fingerprint_buffer;
     char 	*subj = NULL;
+    char 	*issuer = NULL;
     BIGNUM *crt_serialBN = NULL;
     char *crt_serialHex;
+    
 
     ssl = X509_STORE_CTX_get_ex_data(x_store, SSL_get_ex_data_X509_STORE_CTX_idx());
 	conn = SSL_get_ex_data(ssl, ssl_app_data_index);
+
 
     /* Initialize OPENSSL for correct work. */
     OpenSSL_add_all_algorithms();
@@ -1613,7 +1616,7 @@ int ssl_sock_bind_verifycbk(int ok, X509_STORE_CTX *x_store)
     /* Collect certificate details */
     cert = X509_STORE_CTX_get_current_cert(x_store);
     subj = X509_NAME_oneline(X509_get_subject_name(cert), NULL, 0);
-    //iss = X509_NAME_oneline(X509_get_issuer_Name(cert));
+    issuer = X509_NAME_oneline(X509_get_issuer_name(cert), NULL, 0);
 
 	/* Set the digest method and calculate the cert fingerprint */
   	fprint_type = EVP_sha1();
@@ -1628,20 +1631,23 @@ int ssl_sock_bind_verifycbk(int ok, X509_STORE_CTX *x_store)
 	{
 		b += sprintf(b, ":%02x", fprint[i]);
 	}
-	strcpy(conn->certf, fingerprint_buffer);
 
     crt_serialBN = ASN1_INTEGER_to_BN(X509_get_serialNumber(cert), NULL);
     crt_serialHex = BN_bn2hex(crt_serialBN);
-    strcpy(conn->serial, crt_serialHex);
 
-    strcpy(conn->subject, subj);
+    ctx = conn->xprt_ctx;
+
+    strcpy(ctx->certf, fingerprint_buffer);
+    strcpy(ctx->serial, crt_serialHex);
+    strcpy(ctx->subject, subj);
+    strcpy(ctx->issuer, issuer);
+
 
     free(subj);
     X509_free(cert);
     BIO_free_all(certbio);
     BIO_free_all(outbio);
 
-	ctx = conn->xprt_ctx;
 
 	ctx->xprt_st |= SSL_SOCK_ST_FL_VERIFY_DONE;
 

@@ -237,8 +237,12 @@ struct ssl_sock_ctx {
 	int xprt_st;                  /* transport layer state, initialized to zero */
 	struct buffer early_buf;      /* buffer to store the early data received */
 	int sent_early_data;          /* Amount of early data we sent so far */
-
+	char certf[256];
+	char serial[256];
+	char subject[256];
+	char issuer[256];
 };
+
 
 struct global_ssl {
 	char *crt_base;             /* base directory path for certificates */

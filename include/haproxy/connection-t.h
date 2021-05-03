@@ -542,9 +542,6 @@ struct connection {
 	 * thus only present if conn.target is of type OBJ_TYPE_SERVER
 	 */
 	struct conn_hash_node *hash_node;
-	char subject[256];
-	char serial[256];
-	char certf[256];
 };
 
 /* node for backend connection in the idle trees for http-reuse

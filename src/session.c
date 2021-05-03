@@ -333,6 +333,7 @@ static void session_kill_embryonic(struct session *sess, unsigned int state)
 	struct task *task = sess->task;
 	unsigned int log = sess->fe->to_log;
 	const char *err_msg;
+	struct ssl_sock_ctx *ctx = conn->xprt_ctx;
 
 	if (sess->fe->options2 & PR_O2_LOGERRORS)
 		level = LOG_ERR;
@@ -364,9 +365,8 @@ static void session_kill_embryonic(struct session *sess, unsigned int state)
 			{
 				if (global.verbose_tls_err == 1)
 				{
-
-					send_log(sess->fe, level, "%s: %s (sha-1 fingerprint:%s | %s | serial:%s)\n",
-						trash.area, err_msg, conn->certf, conn->subject, conn->serial);					
+					send_log(sess->fe, level, "%s: %s (issuer:%s subject:%s | sha-1 fingerprint:%s | serial:%s)\n",
+						trash.area, err_msg, ctx->issuer, ctx->subject, ctx->certf, ctx->serial);					
 				}
 				else
 					send_log(sess->fe, level, "%s: %s\n", trash.area, err_msg);
