@@ -1634,10 +1634,15 @@ int ssl_sock_bind_verifycbk(int ok, X509_STORE_CTX *x_store)
 
     ctx = conn->xprt_ctx;
 
-    strncpy(ctx->certf, fingerprint_buffer, strlen(fingerprint_buffer));
-    strncpy(ctx->serial, crt_serialHex, strlen(crt_serialHex));
-    strncpy(ctx->subject, subj, strlen(subj));
-    strncpy(ctx->issuer, issuer, strlen(issuer));
+
+    if (strlen(fingerprint_buffer) < 256)
+		strncpy(ctx->certf, fingerprint_buffer, strlen(fingerprint_buffer));
+    if (strlen(crt_serialHex) < 256)
+    	strncpy(ctx->serial, crt_serialHex, strlen(crt_serialHex));
+   	if (strlen(subj) < 256)
+    	strncpy(ctx->subject, subj, strlen(subj));
+    if (strlen(issuer) < 256)
+    	strncpy(ctx->issuer, issuer, strlen(issuer));
 
 
     free(subj);
