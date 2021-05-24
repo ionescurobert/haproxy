@@ -1613,7 +1613,7 @@ int ssl_sock_bind_verifycbk(int ok, X509_STORE_CTX *x_store)
     /* Collect certificate details */
     cert = X509_STORE_CTX_get_current_cert(x_store);
     subj = X509_NAME_oneline(X509_get_subject_name(cert), NULL, 0);
-    //iss = X509_NAME_oneline(X509_get_issuer_Name(cert));
+    issuer = X509_NAME_oneline(X509_get_issuer_name(cert), NULL, 0);
 
 	/* Set the digest method and calculate the cert fingerprint */
   	fprint_type = EVP_sha1();
@@ -1622,26 +1622,29 @@ int ssl_sock_bind_verifycbk(int ok, X509_STORE_CTX *x_store)
 
 
 	/* Prepare the certificate information and store into conn struct */
+	// Todo: Store client certificate details into ssl_sock_ctx instead of conn struct
 	b = fingerprint_buffer + sprintf(fingerprint_buffer, "%02x", fprint[0]);
 	for (unsigned i = 1; i<fprint_size; i++)
 	{
 		b += sprintf(b, ":%02x", fprint[i]);
 	}
-	strncpy(conn->certf, fingerprint_buffer, strlen(fingerprint_buffer));
 
     crt_serialBN = ASN1_INTEGER_to_BN(X509_get_serialNumber(cert), NULL);
     crt_serialHex = BN_bn2hex(crt_serialBN);
-    strncpy(conn->serial, crt_serialHex, strlen(crt_serialHex));
 
-    strncpy(conn->subject, subj, strlen(subj));
+    ctx = conn->xprt_ctx;
+
+    strncpy(ctx->certf, fingerprint_buffer, strlen(fingerprint_buffer));
+    strncpy(ctx->serial, crt_serialHex, strlen(crt_serialHex));
+    strncpy(ctx->subject, subj, strlen(subject));
+    strncpy(ctx->issuer, issuer, strlen(issuer));
+
 
     free(subj);
     X509_free(cert);
     BIO_free_all(certbio);
     BIO_free_all(outbio);
-	
 
-	ctx = conn->xprt_ctx;
 
 	ctx->xprt_st |= SSL_SOCK_ST_FL_VERIFY_DONE;
 
