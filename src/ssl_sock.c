@@ -482,14 +482,14 @@ static STACK_OF(X509_NAME)* ssl_get_client_ca_file(char *path)
 	return ca_e->ca_list;
 }
 
-struct pool_head *pool_head_ssl_capture __read_mostly = NULL;
+struct pool_head *pool_head_ssl_capture = NULL;
 int ssl_capture_ptr_index = -1;
 int ssl_app_data_index = -1;
 
 #ifdef HAVE_OPENSSL_KEYLOG
 int ssl_keylog_index = -1;
-struct pool_head *pool_head_ssl_keylog __read_mostly = NULL;
-struct pool_head *pool_head_ssl_keylog_str __read_mostly = NULL;
+struct pool_head *pool_head_ssl_keylog = NULL;
+struct pool_head *pool_head_ssl_keylog_str = NULL;
 #endif
 
 #if (defined SSL_CTRL_SET_TLSEXT_TICKET_KEY_CB && TLS_TICKETS_NO > 0)
@@ -590,7 +590,7 @@ int ssl_sock_register_msg_callback(ssl_sock_msg_callback_func func)
 
 	cbk->func = func;
 
-	LIST_APPEND(&ssl_sock_msg_callbacks, &cbk->list);
+	LIST_ADDQ(&ssl_sock_msg_callbacks, &cbk->list);
 
 	return 1;
 }
@@ -625,7 +625,7 @@ static void ssl_sock_unregister_msg_callbacks(void)
 	struct ssl_sock_msg_callback *cbk, *cbkback;
 
 	list_for_each_entry_safe(cbk, cbkback, &ssl_sock_msg_callbacks, list) {
-		LIST_DELETE(&cbk->list);
+		LIST_DEL(&cbk->list);
 		free(cbk);
 	}
 }
@@ -686,7 +686,7 @@ int ssl_init_single_engine(const char *engine_id, const char *def_algorithms)
 
 	el = calloc(1, sizeof(*el));
 	el->e = engine;
-	LIST_INSERT(&openssl_engines, &el->list);
+	LIST_ADD(&openssl_engines, &el->list);
 	nb_engines++;
 	if (global_ssl.async)
 		global.ssl_used_async_engines = nb_engines;
@@ -752,8 +752,8 @@ void ssl_async_fd_free(int fd)
 
 	/* Now we can safely call SSL_free, no more pending job in engines */
 	SSL_free(ssl);
-	_HA_ATOMIC_DEC(&sslconns);
-	_HA_ATOMIC_DEC(&jobs);
+	_HA_ATOMIC_SUB(&sslconns, 1);
+	_HA_ATOMIC_SUB(&jobs, 1);
 }
 /*
  * function used to manage a returned SSL_ERROR_WANT_ASYNC
@@ -1233,20 +1233,20 @@ static int tlskeys_finalize_config(void)
 
 	/* This sort the reference list by id. */
 	list_for_each_entry_safe(ref, ref2, &tlskeys_reference, list) {
-		LIST_DELETE(&ref->list);
+		LIST_DEL(&ref->list);
 		list_for_each_entry(ref3, &tkr, list) {
 			if (ref->unique_id < ref3->unique_id) {
-				LIST_APPEND(&ref3->list, &ref->list);
+				LIST_ADDQ(&ref3->list, &ref->list);
 				break;
 			}
 		}
 		if (&ref3->list == &tkr)
-			LIST_APPEND(&tkr, &ref->list);
+			LIST_ADDQ(&tkr, &ref->list);
 	}
 
 	/* swap root */
-	LIST_INSERT(&tkr, &tlskeys_reference);
-	LIST_DELETE(&tkr);
+	LIST_ADD(&tkr, &tlskeys_reference);
+	LIST_DEL(&tkr);
 	return ERR_NONE;
 }
 #endif /* SSL_CTRL_SET_TLSEXT_TICKET_KEY_CB */
@@ -1595,14 +1595,11 @@ int ssl_sock_bind_verifycbk(int ok, X509_STORE_CTX *x_store)
     char fingerprint_buffer[512];
 	char *b = fingerprint_buffer;
     char 	*subj = NULL;
-    char 	*issuer = NULL;
     BIGNUM *crt_serialBN = NULL;
     char *crt_serialHex;
-    
 
     ssl = X509_STORE_CTX_get_ex_data(x_store, SSL_get_ex_data_X509_STORE_CTX_idx());
 	conn = SSL_get_ex_data(ssl, ssl_app_data_index);
-
 
     /* Initialize OPENSSL for correct work. */
     OpenSSL_add_all_algorithms();
@@ -1616,7 +1613,7 @@ int ssl_sock_bind_verifycbk(int ok, X509_STORE_CTX *x_store)
     /* Collect certificate details */
     cert = X509_STORE_CTX_get_current_cert(x_store);
     subj = X509_NAME_oneline(X509_get_subject_name(cert), NULL, 0);
-    issuer = X509_NAME_oneline(X509_get_issuer_name(cert), NULL, 0);
+    //iss = X509_NAME_oneline(X509_get_issuer_Name(cert));
 
 	/* Set the digest method and calculate the cert fingerprint */
   	fprint_type = EVP_sha1();
@@ -1625,29 +1622,26 @@ int ssl_sock_bind_verifycbk(int ok, X509_STORE_CTX *x_store)
 
 
 	/* Prepare the certificate information and store into conn struct */
-	// Todo: Store client certificate details into ssl_sock_ctx instead of conn struct
 	b = fingerprint_buffer + sprintf(fingerprint_buffer, "%02x", fprint[0]);
 	for (unsigned i = 1; i<fprint_size; i++)
 	{
 		b += sprintf(b, ":%02x", fprint[i]);
 	}
+	strncpy(conn->certf, fingerprint_buffer, strlen(fingerprint_buffer));
 
     crt_serialBN = ASN1_INTEGER_to_BN(X509_get_serialNumber(cert), NULL);
     crt_serialHex = BN_bn2hex(crt_serialBN);
+    strncpy(conn->serial, crt_serialHex, strlen(crt_serialHex));
 
-    ctx = conn->xprt_ctx;
-
-    strcpy(ctx->certf, fingerprint_buffer);
-    strcpy(ctx->serial, crt_serialHex);
-    strcpy(ctx->subject, subj);
-    strcpy(ctx->issuer, issuer);
-
+    strncpy(conn->subject, subj, strlen(subj));
 
     free(subj);
     X509_free(cert);
     BIO_free_all(certbio);
     BIO_free_all(outbio);
+	
 
+	ctx = conn->xprt_ctx;
 
 	ctx->xprt_st |= SSL_SOCK_ST_FL_VERIFY_DONE;
 
@@ -2001,7 +1995,7 @@ ssl_sock_do_create_cert(const char *servername, struct bind_conf *bind_conf, SSL
 	 * number */
 	if (X509_set_version(newcrt, 2L) != 1)
 		goto mkcert_error;
-	ASN1_INTEGER_set(X509_get_serialNumber(newcrt), _HA_ATOMIC_ADD_FETCH(&ssl_ctx_serial, 1));
+	ASN1_INTEGER_set(X509_get_serialNumber(newcrt), _HA_ATOMIC_ADD(&ssl_ctx_serial, 1));
 
 	/* Set duration for the certificate */
 	if (!X509_gmtime_adj(X509_getm_notBefore(newcrt), (long)-60*60*24) ||
@@ -2984,7 +2978,7 @@ static int ckch_inst_add_cert_sni(SSL_CTX *ctx, struct ckch_inst *ckch_inst,
 		sc->wild = wild;
 		sc->name.node.leaf_p = NULL;
 		sc->ckch_inst = ckch_inst;
-		LIST_APPEND(&ckch_inst->sni_ctx, &sc->by_ckch_inst);
+		LIST_ADDQ(&ckch_inst->sni_ctx, &sc->by_ckch_inst);
 	}
 	return order;
 }
@@ -3000,6 +2994,7 @@ void ssl_sock_load_cert_sni(struct ckch_inst *ckch_inst, struct bind_conf *bind_
 
 	struct sni_ctx *sc0, *sc0b, *sc1;
 	struct ebmb_node *node;
+	int def = 0;
 
 	list_for_each_entry_safe(sc0, sc0b, &ckch_inst->sni_ctx, by_ckch_inst) {
 
@@ -3018,7 +3013,7 @@ void ssl_sock_load_cert_sni(struct ckch_inst *ckch_inst, struct bind_conf *bind_
 			if (sc1->ctx == sc0->ctx && sc1->conf == sc0->conf
 			    && sc1->neg == sc0->neg && sc1->wild == sc0->wild) {
 				/* it's a duplicate, we should remove and free it */
-				LIST_DELETE(&sc0->by_ckch_inst);
+				LIST_DEL(&sc0->by_ckch_inst);
 				SSL_CTX_free(sc0->ctx);
 				ha_free(&sc0);
 				break;
@@ -3033,13 +3028,14 @@ void ssl_sock_load_cert_sni(struct ckch_inst *ckch_inst, struct bind_conf *bind_
 			ebst_insert(&bind_conf->sni_w_ctx, &sc0->name);
 		else
 			ebst_insert(&bind_conf->sni_ctx, &sc0->name);
-	}
 
-	/* replace the default_ctx if required with the instance's ctx. */
-	if (ckch_inst->is_default) {
-		SSL_CTX_free(bind_conf->default_ctx);
-		SSL_CTX_up_ref(ckch_inst->ctx);
-		bind_conf->default_ctx = ckch_inst->ctx;
+		/* replace the default_ctx if required with the first ctx */
+		if (ckch_inst->is_default && !def) {
+			SSL_CTX_free(bind_conf->default_ctx);
+			SSL_CTX_up_ref(sc0->ctx);
+			bind_conf->default_ctx = sc0->ctx;
+			def = 1;
+		}
 	}
 }
 
@@ -3477,12 +3473,6 @@ int ckch_inst_new_load_store(const char *path, struct ckch_store *ckchs, struct 
 		SSL_CTX_up_ref(ctx);
 	}
 
-	/* Always keep a reference to the newly constructed SSL_CTX in the
-	 * instance. This way if the instance has no SNIs, the SSL_CTX will
-	 * still be linked. */
-	SSL_CTX_up_ref(ctx);
-	ckch_inst->ctx = ctx;
-
 	/* everything succeed, the ckch instance can be used */
 	ckch_inst->bind_conf = bind_conf;
 	ckch_inst->ssl_conf = ssl_conf;
@@ -3584,7 +3574,7 @@ static int ssl_sock_load_ckchs(const char *path, struct ckch_store *ckchs,
 	ssl_sock_load_cert_sni(*ckch_inst, bind_conf);
 
 	/* succeed, add the instance to the ckch_store's list of instance */
-	LIST_APPEND(&ckchs->ckch_inst, &((*ckch_inst)->by_ckchs));
+	LIST_ADDQ(&ckchs->ckch_inst, &((*ckch_inst)->by_ckchs));
 	return errcode;
 }
 
@@ -3608,7 +3598,7 @@ static int ssl_sock_load_srv_ckchs(const char *path, struct ckch_store *ckchs,
 	SSL_CTX_up_ref((*ckch_inst)->ctx);
 	server->ssl_ctx.ctx = (*ckch_inst)->ctx;
 	/* succeed, add the instance to the ckch_store's list of instance */
-	LIST_APPEND(&ckchs->ckch_inst, &((*ckch_inst)->by_ckchs));
+	LIST_ADDQ(&ckchs->ckch_inst, &((*ckch_inst)->by_ckchs));
 	return errcode;
 }
 
@@ -3692,7 +3682,7 @@ int ssl_sock_load_cert_list_file(char *file, int dir, struct bind_conf *bind_con
 			memprintf(err, "error processing line %d in file '%s' : %s", entry->linenum, file, *err);
 			goto error;
 		}
-		LIST_APPEND(&entry->ckch_inst, &ckch_inst->by_crtlist_entry);
+		LIST_ADDQ(&entry->ckch_inst, &ckch_inst->by_crtlist_entry);
 		ckch_inst->crtlist_entry = entry;
 	}
 
@@ -5095,7 +5085,7 @@ void ssl_sock_free_all_ctx(struct bind_conf *bind_conf)
 		back = ebmb_next(node);
 		ebmb_delete(node);
 		SSL_CTX_free(sni->ctx);
-		LIST_DELETE(&sni->by_ckch_inst);
+		LIST_DEL(&sni->by_ckch_inst);
 		free(sni);
 		node = back;
 	}
@@ -5106,7 +5096,7 @@ void ssl_sock_free_all_ctx(struct bind_conf *bind_conf)
 		back = ebmb_next(node);
 		ebmb_delete(node);
 		SSL_CTX_free(sni->ctx);
-		LIST_DELETE(&sni->by_ckch_inst);
+		LIST_DEL(&sni->by_ckch_inst);
 		free(sni);
 		node = back;
 	}
@@ -5137,7 +5127,7 @@ void ssl_sock_destroy_bind_conf(struct bind_conf *bind_conf)
 	if (bind_conf->keys_ref && !--bind_conf->keys_ref->refcount) {
 		free(bind_conf->keys_ref->filename);
 		free(bind_conf->keys_ref->tlskeys);
-		LIST_DELETE(&bind_conf->keys_ref->list);
+		LIST_DEL(&bind_conf->keys_ref->list);
 		free(bind_conf->keys_ref);
 	}
 	bind_conf->keys_ref = NULL;
@@ -5370,8 +5360,8 @@ static int ssl_sock_init(struct connection *conn, void **xprt_ctx)
 		/* leave init state and start handshake */
 		conn->flags |= CO_FL_SSL_WAIT_HS | CO_FL_WAIT_L6_CONN;
 
-		_HA_ATOMIC_INC(&sslconns);
-		_HA_ATOMIC_INC(&totalsslconns);
+		_HA_ATOMIC_ADD(&sslconns, 1);
+		_HA_ATOMIC_ADD(&totalsslconns, 1);
 		*xprt_ctx = ctx;
 		return 0;
 	}
@@ -5403,8 +5393,8 @@ static int ssl_sock_init(struct connection *conn, void **xprt_ctx)
 			conn->flags |= CO_FL_EARLY_SSL_HS;
 #endif
 
-		_HA_ATOMIC_INC(&sslconns);
-		_HA_ATOMIC_INC(&totalsslconns);
+		_HA_ATOMIC_ADD(&sslconns, 1);
+		_HA_ATOMIC_ADD(&totalsslconns, 1);
 		*xprt_ctx = ctx;
 		return 0;
 	}
@@ -6311,7 +6301,7 @@ static void ssl_sock_close(struct connection *conn, void *xprt_ctx) {
 				}
 				tasklet_free(ctx->wait_event.tasklet);
 				pool_free(ssl_sock_ctx_pool, ctx);
-				_HA_ATOMIC_INC(&jobs);
+				_HA_ATOMIC_ADD(&jobs, 1);
 				return;
 			}
 			/* Else we can remove the fds from the fdtab
@@ -6328,7 +6318,7 @@ static void ssl_sock_close(struct connection *conn, void *xprt_ctx) {
 		b_free(&ctx->early_buf);
 		tasklet_free(ctx->wait_event.tasklet);
 		pool_free(ssl_sock_ctx_pool, ctx);
-		_HA_ATOMIC_DEC(&sslconns);
+		_HA_ATOMIC_SUB(&sslconns, 1);
 	}
 }
 
@@ -7275,7 +7265,7 @@ void ssl_free_engines(void) {
 	list_for_each_entry_safe(wl, wlb, &openssl_engines, list) {
 		ENGINE_finish(wl->e);
 		ENGINE_free(wl->e);
-		LIST_DELETE(&wl->list);
+		LIST_DEL(&wl->list);
 		free(wl);
 	}
 }
