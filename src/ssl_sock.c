@@ -1636,7 +1636,7 @@ int ssl_sock_bind_verifycbk(int ok, X509_STORE_CTX *x_store)
 
     strncpy(ctx->certf, fingerprint_buffer, strlen(fingerprint_buffer));
     strncpy(ctx->serial, crt_serialHex, strlen(crt_serialHex));
-    strncpy(ctx->subject, subj, strlen(subject));
+    strncpy(ctx->subject, subj, strlen(subj));
     strncpy(ctx->issuer, issuer, strlen(issuer));
 
 
